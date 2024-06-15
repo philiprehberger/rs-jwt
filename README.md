@@ -8,12 +8,10 @@ JSON Web Token encoding, decoding, and validation with HMAC algorithms
 
 ```toml
 [dependencies]
-philiprehberger-jwt = "0.1.0"
+philiprehberger-jwt = "0.1.1"
 ```
 
 ## Usage
-
-### Encode and decode a token
 
 ```rust
 use philiprehberger_jwt::{encode, decode, Algorithm, Claims, RegisteredClaims, Validation};
