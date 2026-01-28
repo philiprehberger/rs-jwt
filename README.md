@@ -10,7 +10,7 @@ JSON Web Token encoding, decoding, and validation with HMAC algorithms
 
 ```toml
 [dependencies]
-philiprehberger-jwt = "0.1.2"
+philiprehberger-jwt = "0.2.0"
 ```
 
 ## Usage

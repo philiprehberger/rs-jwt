@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0 (2026-04-06)
+
+- Upgrade hmac from 0.12 to 0.13
+- Upgrade sha2 from 0.10 to 0.11
+
 ## 0.1.3 (2026-03-31)
 
 - Standardize README to 3-badge format with emoji Support section
