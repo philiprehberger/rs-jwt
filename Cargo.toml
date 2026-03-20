@@ -1,0 +1,20 @@
+[package]
+name = "philiprehberger-jwt"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+authors = ["Philip Rehberger"]
+description = "JSON Web Token encoding, decoding, and validation with HMAC algorithms"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/philiprehberger/rs-jwt"
+documentation = "https://docs.rs/philiprehberger-jwt"
+keywords = ["jwt", "token", "auth", "authentication", "web"]
+categories = ["cryptography", "web-programming"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10"
