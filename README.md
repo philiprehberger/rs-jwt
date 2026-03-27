@@ -1,6 +1,6 @@
 # rs-jwt
 
-[![CI](https://github.com/philiprehberger/rs-jwt/actions/workflows/ci.yml/badge.svg)](https://github.com/philiprehberger/rs-jwt/actions/workflows/ci.yml) [![Crates.io](https://img.shields.io/crates/v/philiprehberger-jwt.svg)](https://crates.io/crates/philiprehberger-jwt) [![License](https://img.shields.io/github/license/philiprehberger/rs-jwt)](LICENSE)
+[![CI](https://github.com/philiprehberger/rs-jwt/actions/workflows/ci.yml/badge.svg)](https://github.com/philiprehberger/rs-jwt/actions/workflows/ci.yml) [![Crates.io](https://img.shields.io/crates/v/philiprehberger-jwt.svg)](https://crates.io/crates/philiprehberger-jwt) [![License](https://img.shields.io/github/license/philiprehberger/rs-jwt)](LICENSE) [![Sponsor](https://img.shields.io/badge/sponsor-GitHub%20Sponsors-ec6cb9)](https://github.com/sponsors/philiprehberger)
 
 JSON Web Token encoding, decoding, and validation with HMAC algorithms
 
