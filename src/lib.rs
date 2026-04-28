@@ -39,6 +39,21 @@ pub enum Algorithm {
     HS512,
 }
 
+impl Algorithm {
+    /// Returns the canonical JWT name of the algorithm
+    /// (`"HS256"`, `"HS384"`, or `"HS512"`).
+    ///
+    /// Useful for logging and for matching against `kid`-keyed configs
+    /// without a `match` per call site.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Algorithm::HS256 => "HS256",
+            Algorithm::HS384 => "HS384",
+            Algorithm::HS512 => "HS512",
+        }
+    }
+}
+
 /// JWT header containing algorithm and type information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
@@ -114,6 +129,7 @@ pub struct Validation {
     required_claims: Vec<String>,
     issuer: Option<String>,
     audience: Option<String>,
+    audiences: Vec<String>,
 }
 
 impl Default for Validation {
@@ -127,6 +143,7 @@ impl Default for Validation {
             required_claims: Vec::new(),
             issuer: None,
             audience: None,
+            audiences: Vec::new(),
         }
     }
 }
@@ -157,8 +174,25 @@ impl Validation {
     }
 
     /// Sets the expected audience. If set, tokens with a different `aud` are rejected.
+    ///
+    /// If both `audience` and [`Validation::audiences`] are set, the token's
+    /// `aud` must match the single value or be in the list.
     pub fn audience(mut self, aud: &str) -> Self {
         self.audience = Some(aud.to_string());
+        self
+    }
+
+    /// Sets a set of acceptable audience values. The token's `aud` must equal
+    /// any one of them.
+    ///
+    /// If both `audience` and `audiences` are configured, the token's `aud`
+    /// must match the single value *or* appear in the list.
+    pub fn audiences<I, S>(mut self, auds: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.audiences = auds.into_iter().map(Into::into).collect();
         self
     }
 
@@ -170,7 +204,7 @@ impl Validation {
 }
 
 /// Errors that can occur during JWT operations.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JwtError {
     /// The token format is invalid (wrong number of segments).
     InvalidToken,
@@ -277,7 +311,9 @@ fn verify_signature(
 /// Encodes claims into a signed JWT string.
 ///
 /// Creates a token with the format `header.payload.signature` using the
-/// specified HMAC algorithm.
+/// specified HMAC algorithm. The header is `{ "alg": <algorithm>, "typ":
+/// "JWT" }` with no `kid`. To include a `kid` or otherwise customize the
+/// header, use [`encode_with_header`].
 ///
 /// # Errors
 ///
@@ -287,9 +323,26 @@ pub fn encode<T: Serialize>(
     secret: &[u8],
     algorithm: Algorithm,
 ) -> Result<String, JwtError> {
-    let header = Header::new(algorithm);
+    encode_with_header(&Header::new(algorithm), claims, secret)
+}
+
+/// Encodes claims into a signed JWT using a caller-provided header.
+///
+/// The header's `alg` field selects the signing algorithm. Use this to set
+/// `kid` (key rotation, multi-tenant setups) or any other header field
+/// supported by [`Header`].
+///
+/// # Errors
+///
+/// Returns [`JwtError::InvalidJson`] if the header or claims cannot be
+/// serialized.
+pub fn encode_with_header<T: Serialize>(
+    header: &Header,
+    claims: &Claims<T>,
+    secret: &[u8],
+) -> Result<String, JwtError> {
     let header_json =
-        serde_json::to_string(&header).map_err(|e| JwtError::InvalidJson(e.to_string()))?;
+        serde_json::to_string(header).map_err(|e| JwtError::InvalidJson(e.to_string()))?;
     let header_b64 = URL_SAFE_NO_PAD.encode(header_json.as_bytes());
 
     let claims_json =
@@ -297,7 +350,7 @@ pub fn encode<T: Serialize>(
     let claims_b64 = URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
 
     let message = format!("{header_b64}.{claims_b64}");
-    let signature = sign(message.as_bytes(), secret, algorithm);
+    let signature = sign(message.as_bytes(), secret, header.alg);
     let signature_b64 = URL_SAFE_NO_PAD.encode(&signature);
 
     Ok(format!("{message}.{signature_b64}"))
@@ -376,10 +429,21 @@ pub fn decode<T: Serialize + DeserializeOwned>(
         }
     }
 
-    if let Some(ref expected_aud) = validation.audience {
-        match &claims.registered.aud {
-            Some(aud) if aud == expected_aud => {}
-            _ => return Err(JwtError::InvalidAudience),
+    // Audience: a token's aud must match `audience` (if set) or appear in
+    // `audiences` (if set). When both are configured, either acceptance
+    // path is sufficient.
+    if validation.audience.is_some() || !validation.audiences.is_empty() {
+        let actual = match &claims.registered.aud {
+            Some(a) => a,
+            None => return Err(JwtError::InvalidAudience),
+        };
+        let single_ok = validation
+            .audience
+            .as_ref()
+            .is_some_and(|expected| expected == actual);
+        let list_ok = validation.audiences.iter().any(|a| a == actual);
+        if !single_ok && !list_ok {
+            return Err(JwtError::InvalidAudience);
         }
     }
 
@@ -714,6 +778,89 @@ mod tests {
             decode(&token, b"secret", &Validation::default()).unwrap();
         assert!(decoded.registered.iat.is_some());
         assert_eq!(decoded.custom["user_id"], 42);
+    }
+
+    #[test]
+    fn test_algorithm_name() {
+        assert_eq!(Algorithm::HS256.name(), "HS256");
+        assert_eq!(Algorithm::HS384.name(), "HS384");
+        assert_eq!(Algorithm::HS512.name(), "HS512");
+    }
+
+    #[test]
+    fn test_encode_with_header_includes_kid() {
+        let claims = make_claims();
+        let mut header = Header::new(Algorithm::HS256);
+        header.kid = Some("key-2026".into());
+
+        let token = encode_with_header(&header, &claims, b"secret").unwrap();
+        let inspected = inspect(&token).unwrap();
+        assert_eq!(inspected.alg, Algorithm::HS256);
+        assert_eq!(inspected.kid, Some("key-2026".into()));
+
+        // Decoding with the matching secret still works
+        let decoded: Claims<serde_json::Value> =
+            decode(&token, b"secret", &Validation::default()).unwrap();
+        assert_eq!(decoded.registered.sub, Some("user-123".into()));
+    }
+
+    #[test]
+    fn test_audiences_accept_any_in_list() {
+        let claims = Claims {
+            registered: RegisteredClaims {
+                aud: Some("svc-a".into()),
+                exp: Some(future_timestamp(3600)),
+                ..Default::default()
+            },
+            custom: serde_json::json!({}),
+        };
+        let secret = b"secret";
+        let token = encode(&claims, secret, Algorithm::HS256).unwrap();
+
+        // svc-a is in the allowed set
+        let validation =
+            Validation::default().audiences(vec!["svc-a".to_string(), "svc-b".to_string()]);
+        let result: Result<Claims<serde_json::Value>, _> = decode(&token, secret, &validation);
+        assert!(result.is_ok());
+
+        // none of the allowed audiences match
+        let validation =
+            Validation::default().audiences(vec!["svc-x".to_string(), "svc-y".to_string()]);
+        let result: Result<Claims<serde_json::Value>, _> = decode(&token, secret, &validation);
+        assert_eq!(result.err(), Some(JwtError::InvalidAudience));
+    }
+
+    #[test]
+    fn test_audiences_combined_with_audience() {
+        let claims = Claims {
+            registered: RegisteredClaims {
+                aud: Some("svc-c".into()),
+                exp: Some(future_timestamp(3600)),
+                ..Default::default()
+            },
+            custom: serde_json::json!({}),
+        };
+        let secret = b"secret";
+        let token = encode(&claims, secret, Algorithm::HS256).unwrap();
+
+        // Single `audience` doesn't match, but `audiences` does — accept
+        let validation = Validation::default()
+            .audience("svc-a")
+            .audiences(vec!["svc-c".to_string()]);
+        let result: Result<Claims<serde_json::Value>, _> = decode(&token, secret, &validation);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_jwt_error_is_clone_and_partial_eq() {
+        let a = JwtError::ExpiredToken;
+        let b = a.clone();
+        assert_eq!(a, b);
+        assert_ne!(a, JwtError::InvalidSignature);
+        assert_eq!(
+            JwtError::MissingClaim("sub".into()),
+            JwtError::MissingClaim("sub".into())
+        );
     }
 
     #[test]

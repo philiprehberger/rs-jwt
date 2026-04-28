@@ -10,7 +10,7 @@ JSON Web Token encoding, decoding, and validation with HMAC algorithms
 
 ```toml
 [dependencies]
-philiprehberger-jwt = "0.2.0"
+philiprehberger-jwt = "0.3.0"
 ```
 
 ## Usage
@@ -99,15 +99,43 @@ let header = inspect(&token).unwrap();
 assert_eq!(header.alg, Algorithm::HS256);
 ```
 
+### Encode with a custom header (key rotation via `kid`)
+
+```rust
+use philiprehberger_jwt::{encode_with_header, Algorithm, Claims, Header, RegisteredClaims};
+
+let mut header = Header::new(Algorithm::HS256);
+header.kid = Some("key-2026".into());
+
+let claims = Claims {
+    registered: RegisteredClaims::default(),
+    custom: serde_json::json!({}),
+};
+let token = encode_with_header(&header, &claims, b"secret").unwrap();
+```
+
+### Multiple accepted audiences
+
+```rust
+use philiprehberger_jwt::Validation;
+
+let validation = Validation::default()
+    .audiences(vec!["gateway".to_string(), "downstream".to_string()]);
+// Tokens whose `aud` is either "gateway" or "downstream" pass.
+```
+
 ## API
 
 | Function | Description |
 |---|---|
 | `encode(claims, secret, algorithm)` | Encode claims into a signed JWT string |
+| `encode_with_header(header, claims, secret)` | Encode using a caller-provided header (e.g. with `kid`) |
 | `decode(token, secret, validation)` | Decode and validate a JWT, returning typed claims |
 | `encode_simple(claims, secret)` | Encode with HS256 and auto-set `iat` |
 | `inspect(token)` | Decode the header without verifying the signature |
 | `decode_without_validation(token)` | Decode claims without any verification (unsafe) |
+| `Algorithm::name()` | Canonical algorithm string (`"HS256"`, etc.) |
+| `Validation::audiences(list)` | Accept tokens whose `aud` matches any value in the list |
 
 | Type | Description |
 |---|---|

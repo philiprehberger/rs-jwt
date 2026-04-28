@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 (2026-04-27)
+
+- Add `encode_with_header()` for encoding with a caller-provided header (enables `kid` and other custom header fields)
+- Add `Algorithm::name()` returning the canonical algorithm string
+- Add `Validation::audiences()` to accept any of several valid audiences
+- Derive `Clone`, `PartialEq`, and `Eq` on `JwtError`
+
 ## 0.2.0 (2026-04-06)
 
 - Upgrade hmac from 0.12 to 0.13
